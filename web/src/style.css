@@ -1,0 +1,259 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --panel: #141824;
+  --panel-edge: #232a3d;
+  --text: #e8ecf6;
+  --muted: #8b93a7;
+  --accent: #4d7dff;
+  --live: #35d07f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-edge);
+  flex-wrap: wrap;
+}
+
+#status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+#status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #b2554a;
+  flex: none;
+}
+
+#status-dot[data-state="live"] {
+  background: var(--live);
+  box-shadow: 0 0 10px rgba(53, 208, 127, 0.8);
+}
+
+#toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+button {
+  background: #1d2333;
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button:active {
+  background: #273049;
+}
+
+#screen-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  min-height: 0;
+}
+
+#surface {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+#screen {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  border-radius: 12px;
+  background: #000;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  border-radius: 12px;
+  background: rgba(8, 10, 16, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+#overlay p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+#overlay .hint {
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 520px;
+}
+
+#error-banner {
+  margin: 0 16px 16px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #3a1f24;
+  border: 1px solid #7a3a44;
+  color: #ffc9d1;
+  font-size: 13px;
+}
+
+#error-banner.hidden {
+  display: none;
+}
+
+#display-panel {
+  position: fixed;
+  right: 16px;
+  top: 64px;
+  z-index: 10;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(20, 24, 36, 0.97);
+  border: 1px solid var(--panel-edge);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+#display-panel.hidden {
+  display: none;
+}
+
+#display-panel h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.panel-hint {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.preset-grid button.selected {
+  border-color: var(--accent);
+  background: #273049;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.panel-row input,
+.panel-row select {
+  background: #1d2333;
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  width: 90px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#stream-info {
+  color: var(--muted);
+  font-size: 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--panel-edge);
+}
+
+#mic-status {
+  color: var(--live);
+  font-size: 12px;
+  padding-left: 10px;
+}
+
+.panel-row input[type="range"] {
+  flex: 1;
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.audio-stream-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.audio-stream-row label {
+  width: 110px;
+  text-transform: capitalize;
+}
