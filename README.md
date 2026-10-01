@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/playport-logo.svg" alt="PlayPort" width="380" />
+<img src="docs/playport-logo.svg" alt="PlayPort" width="320" />
 
 **Wireless CarPlay in your browser.**
 A server-side CarPlay receiver that turns any screen on your network into a head unit.
