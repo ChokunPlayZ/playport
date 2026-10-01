@@ -105,7 +105,7 @@ the browser** (no server-side decoding or re-encoding), and the browser decodes 
 | Display and quality | Audio mixer (no active streams) |
 |---|---|
 | ![Display settings](docs/screenshots/display-panel.jpg) | ![Audio mixer](docs/screenshots/audio-controls.jpg) |
-| **Focus mode (waiting for an iPhone)** | **Mobile viewer (waiting for an iPhone)** |
+| **Focus mode** | **Mobile viewer** |
 | ![Focus mode](docs/screenshots/focus-mode.jpg) | <img src="docs/screenshots/mobile.jpg" alt="Mobile viewer" width="250" /> |
 
 ## Requirements
