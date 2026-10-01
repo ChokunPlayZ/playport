@@ -54,6 +54,7 @@ export class InputController {
   private readonly onPointerDown = (event: PointerEvent): void => {
     event.preventDefault();
     if (this.pointers.size >= MAX_CONTACTS) return;
+    this.surface.focus({ preventScroll: true });
     this.surface.setPointerCapture(event.pointerId);
     this.pointers.set(event.pointerId, {
       slot: this.nextSlot(),
@@ -82,6 +83,9 @@ export class InputController {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (this.surface.inert || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (document.querySelector('dialog[open]')) return;
+    if (event.target instanceof Element && (event.target.closest('input, select, textarea, [contenteditable="true"]') || ((event.key === 'Enter' || event.key === ' ') && event.target.closest('button, a')))) return;
     const knob = (overrides: Partial<KnobState>) => {
       event.preventDefault();
       this.send({ type: 'knob', knob: emptyKnob(overrides) });

@@ -12,7 +12,7 @@ A server-side CarPlay receiver that turns any screen on your network into a head
 
 </div>
 
-![PlayPort dashboard](docs/screenshots/dashboard.svg)
+![PlayPort live CarPlay viewer](docs/screenshots/dashboard.jpg)
 
 PlayPort runs the **car** side of CarPlay on a Mac. Your iPhone connects wirelessly (Bluetooth
 bootstrap, then Wi-Fi), and every browser on the network can watch and control CarPlay — touch,
@@ -85,6 +85,8 @@ the browser** (no server-side decoding or re-encoding), and the browser decodes 
 - **Wireless CarPlay** — Bluetooth iAP2 bootstrap + Wi-Fi handoff, with a connection supervisor that
   re-invites the phone whenever the link drops.
 - **Any browser is the screen** — laptop, tablet, wall panel, another Mac. Multiple viewers at once.
+- **Responsive viewer** — grouped controls, dedicated display/audio panels, a connection guide,
+  and focus mode for a larger CarPlay screen.
 - **Touch and knob input** — up to two touch contacts, keyboard as rotary knob, toolbar buttons for
   Home/Back/Select, media transport and Siri.
 - **Calls and Siri** — when the phone opens its speech/telephony stream, the browser asks for the
@@ -94,19 +96,17 @@ the browser** (no server-side decoding or re-encoding), and the browser decodes 
 - **Quality tuning** — "Match this window" advertises your display's physical pixels for 1:1
   sharpness; a stats HUD shows resolution, fps, bitrate, drops, decode queue and latency.
 - **Audio mixer** — master plus per-stream volumes (media, navigation, Siri/calls).
-- **Persistent settings** — everything you change in the UI is saved to `~/.playport/config.json`.
+- **Persistent settings** — display settings are saved to `~/.playport/config.json`; audio levels
+  are saved in your browser.
 - **No cloud, no account** — everything runs on your machine and your LAN.
 
 ## Screenshots
 
-> These are placeholders — replace the SVGs in [`docs/screenshots/`](docs/screenshots) with your own
-> PNG/JPG captures (same names, or update the links below) to make the repo yours.
-
-| Dashboard | Display and quality |
+| Display and quality | Audio mixer (no active streams) |
 |---|---|
-| ![Dashboard](docs/screenshots/dashboard.svg) | ![Display panel](docs/screenshots/display-panel.svg) |
-| **Audio, calls and microphone** | **Portrait and custom resolutions** |
-| ![Audio](docs/screenshots/audio-controls.svg) | ![Portrait](docs/screenshots/portrait.svg) |
+| ![Display settings](docs/screenshots/display-panel.jpg) | ![Audio mixer](docs/screenshots/audio-controls.jpg) |
+| **Focus mode (waiting for an iPhone)** | **Mobile viewer (waiting for an iPhone)** |
+| ![Focus mode](docs/screenshots/focus-mode.jpg) | <img src="docs/screenshots/mobile.jpg" alt="Mobile viewer" width="250" /> |
 
 ## Requirements
 
@@ -234,8 +234,8 @@ Applying a change restarts CarPlay (the phone reconnects in a few seconds). Valu
 ## Audio and microphone
 
 Audio is passed through per stream (media, guidance, speech, telephony) and decoded in the browser
-with a jitter buffer. The **Audio** panel has a master volume and per-stream sliders; the toolbar
-has **Call** (answer/end), **Mute call** and **Night** (day/night mode) buttons. When the phone
+with a jitter buffer. The **Audio** panel has a master volume and per-stream sliders; the control
+dock has **Call** (answer/end) and **Mute call**, and the sidebar has **Night** (day/night mode). When the phone
 opens Siri or a call, the browser asks for microphone permission and sends audio back to the phone.
 
 ## Controls
@@ -248,7 +248,10 @@ opens Siri or a call, the browser asks for microphone permission and sends audio
 | Esc / Backspace | Back |
 | Space | Play / pause |
 | S | Siri |
-| Toolbar | Home, Back, Select, media transport, Siri, Call, Mute call, Night, Audio, Display, Fix video, Fullscreen |
+| Viewer controls | Home, Back, Select, media transport, Siri, Call, Mute call, Night, Audio, Display, Refresh video, Focus mode, Fullscreen |
+
+Use **Guide** for connection steps and keyboard shortcuts. **Focus mode** hides the header and
+sidebar while keeping the CarPlay controls within reach.
 
 ## Configuration
 
@@ -309,7 +312,7 @@ server/     Ktor server: RTSP + mDNS + Bluetooth bridge + WebSocket hub + displa
 web/        Vite + TypeScript browser client (WebCodecs video/audio, input, panels)
 macos/      bt-bridge: Swift IOBluetooth RFCOMM helper for the wireless bootstrap
 identity/   Accessory identity drop-in (gitignored — see above)
-docs/       Logo and screenshot placeholders
+docs/       Logo and screenshots
 ```
 
 ## Development
@@ -317,6 +320,7 @@ docs/       Logo and screenshot placeholders
 ```sh
 ./gradlew build          # compiles both modules and runs the test suite (96 tests)
 (cd web && npm run build)  # type-checks and bundles the browser client
+(cd web && npm test)       # checks keyboard isolation and touch mapping
 ./gradlew :server:run --args="--help"
 ```
 

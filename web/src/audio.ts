@@ -135,6 +135,10 @@ export class AudioEngine {
     this.closeStream(streamType);
   }
 
+  stopAll(): void {
+    for (const streamType of this.streams.keys()) this.closeStream(streamType);
+  }
+
   private closeStream(streamType: number): void {
     const state = this.streams.get(streamType);
     if (!state) return;
