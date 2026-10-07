@@ -7,6 +7,8 @@
 // Usage:
 //   bt-bridge --print-address          print the local Bluetooth adapter address
 //   bt-bridge --list                   list paired devices as "AA:BB:CC:DD:EE:FF Name"
+//   bt-bridge --unpair <addr>          forget this device's saved Mac bond
+//   bt-bridge --force-pair <addr>      forget the saved Mac bond and pair again
 //   bt-bridge --address <addr>         open RFCOMM to the device and pump stdio
 //
 // The iPhone must already be paired in System Settings > Bluetooth.
@@ -37,6 +39,52 @@ func fail(_ message: String) -> Never {
 
 func normalize(_ address: String) -> String {
     address.replacingOccurrences(of: ":", with: "-").lowercased()
+}
+
+func formatStatus(_ status: IOReturn) -> String {
+    "0x" + String(UInt32(bitPattern: status), radix: 16)
+}
+
+/// IOBluetooth has no public unpair API. This guarded selector is also used by blueutil.
+/// Verify removal instead of assuming that sending the private message succeeded.
+func forgetDevice(_ device: IOBluetoothDevice) {
+    let address = normalize(device.addressString ?? "")
+    guard !address.isEmpty else { fail("cannot forget a device without an address") }
+    guard device.isPaired() else { return }
+    let remove = NSSelectorFromString("remove")
+    guard device.responds(to: remove) else {
+        fail("this macOS version cannot forget the device through IOBluetooth; use Forget This Device in Bluetooth settings")
+    }
+    if device.isConnected() {
+        let status = device.closeConnection()
+        guard status == kIOReturnSuccess else {
+            fail("could not disconnect before forgetting the device (status \(formatStatus(status)))")
+        }
+    }
+    _ = device.perform(remove)
+    let deadline = Date().addingTimeInterval(10)
+    repeat {
+        // pairedDevices() can retain a cloud-linked iPhone after its Classic bond is
+        // removed. Check the bond flag on the target instead of membership in that list.
+        if !device.isPaired() {
+            print("forgot saved Mac pairing for \(address)")
+            fflush(stdout)
+            return
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    } while Date() < deadline
+    fail("the device is still paired after the removal request; use Forget This Device in Bluetooth settings")
+}
+
+func unpair(address: String) {
+    guard let device = IOBluetoothDevice(addressString: normalize(address)) else {
+        fail("invalid Bluetooth address: \(address)")
+    }
+    if !device.isPaired() {
+        print("\(address) has no saved Mac pairing")
+        return
+    }
+    forgetDevice(device)
 }
 
 /// Runs a blocking IOBluetooth call with a watchdog so missing permissions never hang the helper.
@@ -210,6 +258,7 @@ final class Pairer: NSObject, IOBluetoothDevicePairDelegate, IOBluetoothDeviceIn
     private let force: Bool
     private var inquiry: IOBluetoothDeviceInquiry?
     private var pairing: IOBluetoothDevicePair?
+    private var pairingStarted = false
     private var finished = false
 
     init(target: String, force: Bool) {
@@ -218,12 +267,23 @@ final class Pairer: NSObject, IOBluetoothDevicePairDelegate, IOBluetoothDeviceIn
     }
 
     func run() {
-        if let device = pairedDevice(matching: target) {
+        guard let device = IOBluetoothDevice(addressString: normalize(target)) else {
+            fail("invalid Bluetooth address: \(target)")
+        }
+        if device.isPaired() {
             if !force {
                 print("\(target) is already paired; nothing to do.")
                 print("Start the server with --wireless and it will find the iPhone (or check --list).")
                 exit(0)
             }
+            forgetDevice(device)
+            guard let freshDevice = IOBluetoothDevice(addressString: normalize(target)) else {
+                fail("could not recreate the device after forgetting its saved pairing")
+            }
+            beginPairing(with: freshDevice)
+            return
+        }
+        if force {
             beginPairing(with: device)
             return
         }
@@ -243,15 +303,17 @@ final class Pairer: NSObject, IOBluetoothDevicePairDelegate, IOBluetoothDeviceIn
         RunLoop.main.run()
     }
 
-    private func pairedDevice(matching address: String) -> IOBluetoothDevice? {
-        guard let devices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else { return nil }
-        let normalized = normalize(address)
-        return devices.first { normalize($0.addressString ?? "") == normalized }
-    }
-
     private func beginPairing(with device: IOBluetoothDevice) {
+        guard !pairingStarted else { return }
+        pairingStarted = true
         inquiry?.stop()
         inquiry = nil
+        if #available(macOS 27.0, *) {
+            // On macOS 27, IOBluetoothDevicePair can retrieve a dual-mode iPhone as an LE
+            // peripheral and stall there. Authenticate its Classic baseband connection directly.
+            pairClassic(with: device)
+            return
+        }
         guard let pairing = IOBluetoothDevicePair(device: device) else {
             fail("could not create a pairing session")
         }
@@ -271,8 +333,41 @@ final class Pairer: NSObject, IOBluetoothDevicePairDelegate, IOBluetoothDeviceIn
         RunLoop.main.run()
     }
 
+    private func pairClassic(with device: IOBluetoothDevice) {
+        FileHandle.standardError.write("bt-bridge: starting Bluetooth Classic pairing with \(target); confirm any pairing request on the Mac and iPhone\n".data(using: .utf8)!)
+        let watchdog = DispatchWorkItem {
+            fail("Classic pairing timed out after 60s; keep the iPhone unlocked with Bluetooth settings open and check for a pairing request on both devices")
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 60, execute: watchdog)
+        defer { watchdog.cancel() }
+        if !device.isConnected() {
+            let status = device.openConnection()
+            guard status == kIOReturnSuccess || device.isConnected() else {
+                fail("Classic connection failed (status \(formatStatus(status)))")
+            }
+        }
+        FileHandle.standardError.write("bt-bridge: Classic connection established; requesting authentication\n".data(using: .utf8)!)
+        let status = device.requestAuthentication()
+        guard status == kIOReturnSuccess else {
+            fail("Classic authentication failed (status \(formatStatus(status))); forget this Mac on the iPhone, then retry --force-pair \(target)")
+        }
+        // The macOS 27 compatibility layer may return before its numeric-comparison
+        // request has been confirmed. Keep the process and run loop alive until bonded.
+        if !device.isPaired() {
+            FileHandle.standardError.write("bt-bridge: waiting for pairing confirmation on the Mac and iPhone\n".data(using: .utf8)!)
+        }
+        while !device.isPaired() {
+            guard device.isConnected() else {
+                fail("Classic pairing ended without a saved pairing; check the pairing request on both devices and retry")
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        print("paired with \(target)")
+        exit(0)
+    }
+
     func devicePairingStarted(_ sender: Any!) {
-        FileHandle.standardError.write("bt-bridge: pairing started; a code should appear on the iPhone\n".data(using: .utf8)!)
+        FileHandle.standardError.write("bt-bridge: pairing started; waiting for connection and a confirmation request\n".data(using: .utf8)!)
     }
 
     func devicePairingConnecting(_ sender: Any!) {
@@ -285,7 +380,7 @@ final class Pairer: NSObject, IOBluetoothDevicePairDelegate, IOBluetoothDeviceIn
     }
 
     func deviceInquiryComplete(_ sender: IOBluetoothDeviceInquiry!, error: IOReturn, aborted: Bool) {
-        if pairing == nil {
+        if !pairingStarted {
             fail("device \(target) was not found; make sure it is discoverable (Bluetooth settings open) and try again")
         }
     }
@@ -324,6 +419,8 @@ if args.contains("--print-address") {
     listPaired()
 } else if args.contains("--scan") {
     Scanner().start(seconds: 10)
+} else if let index = args.firstIndex(of: "--unpair"), index + 1 < args.count {
+    unpair(address: args[index + 1])
 } else if let index = args.firstIndex(of: "--pair"), index + 1 < args.count {
     Pairer(target: args[index + 1], force: false).run()
 } else if let index = args.firstIndex(of: "--force-pair"), index + 1 < args.count {
@@ -331,5 +428,5 @@ if args.contains("--print-address") {
 } else if let index = args.firstIndex(of: "--address"), index + 1 < args.count {
     Bridge().start(address: args[index + 1])
 } else {
-    fail("usage: bt-bridge --print-address | --list | --scan | --pair <addr> | --force-pair <addr> | --address <addr>")
+    fail("usage: bt-bridge --print-address | --list | --scan | --unpair <addr> | --pair <addr> | --force-pair <addr> | --address <addr>")
 }

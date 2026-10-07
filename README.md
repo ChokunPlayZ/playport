@@ -284,7 +284,8 @@ Every option can be given as a CLI flag; UI changes are saved to `~/.playport/co
 |---|---|
 | `bt-bridge` aborts immediately (`SIGABRT`) | macOS Bluetooth privacy. System Settings → Privacy & Security → Bluetooth → enable your terminal app. |
 | iPhone never appears in Bluetooth settings | Expected — macOS hides iPhones. Pair with `macos/bt-bridge/bt-bridge --pair <address>` (with Settings → Bluetooth open on the phone). |
-| `--pair` hangs | The device is already paired; just start the server, or use `--force-pair` to re-bond. |
+| Pairing times out without a code | On macOS 27 the helper uses Classic baseband authentication to avoid an `IOBluetoothDevicePair` LE lookup stall. Rebuild the helper and keep the iPhone unlocked with Settings → Bluetooth open. Accept the Mac's Pair/Connect request, then confirm the corresponding request on the iPhone. The helper waits until a saved pairing is confirmed. |
+| RFCOMM never opens, or Bluetooth authentication reports a missing key | Stop the server. Forget the Mac in the iPhone's Bluetooth settings if listed, then run `macos/bt-bridge/bt-bridge --force-pair <address>`. This removes only that device's saved Mac bond before pairing again. `--unpair <address>` can remove it separately. Bond removal uses an availability-checked private IOBluetooth API; if unsupported, use Forget This Device in Bluetooth settings. |
 | `no Wi-Fi network detected` | macOS hides the SSID from processes without Location Services, or the Wi-Fi is on another interface. Pass `--wifi-ssid` and `--wifi-passphrase`, or grant Location Services to your terminal. |
 | Phone connects but video is black | Open the **https://** URL (WebCodecs needs a secure context) and hard-refresh. Press **Fix video** to force a keyframe. |
 | `H.265/HEVC … cannot decode` | Your browser lacks HEVC. Switch the codec back to H.264 in the Display panel. |
