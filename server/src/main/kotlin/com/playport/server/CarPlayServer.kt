@@ -81,7 +81,7 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
             port = config.airPlayPort,
             entertainmentSampleRate = 48_000,
             hevc = display.hevc,
-            microphone = false,
+            microphone = true,
             manufacturer = config.manufacturer,
             model = config.model,
             oemLabel = config.deviceName,

@@ -3,6 +3,7 @@ package com.playport.server
 import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -25,6 +26,20 @@ class CarPlayServerTest {
             // Display changes rebuild the declaration and must retain the Bluetooth association.
             server.display.update(1920, 1080, 60, 100, false)
             assertEquals(bluetoothAddress, server.airPlayConfig.btMac)
+        }
+    }
+
+    @Test
+    fun serverAdvertisesMicrophoneForItsSpeechAndTelephonyUplink() {
+        testServer().use { server ->
+            val config = server.airPlayConfig
+            assertTrue(config.microphone)
+            val formats = (AirPlayInfoPlist.build(config)["audioFormats"] as List<*>)
+                .map { it as Map<*, *> }
+            for (audioType in listOf("default", "telephony", "speechRecognition")) {
+                val format = formats.single { it["type"] == 100 && it["audioType"] == audioType }
+                assertEquals(0x70004154, format["audioInputFormats"])
+            }
         }
     }
 
