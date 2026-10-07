@@ -36,9 +36,10 @@ export class InputController {
     surface.addEventListener('pointerdown', this.onPointerDown, { passive: false });
     surface.addEventListener('pointermove', this.onPointerMove, { passive: false });
     surface.addEventListener('pointerup', this.onPointerUp, { passive: false });
-    surface.addEventListener('pointercancel', this.onPointerUp, { passive: false });
-    surface.addEventListener('pointerleave', this.onPointerUp, { passive: false });
+    surface.addEventListener('pointercancel', this.onPointerCancel, { passive: false });
+    surface.addEventListener('lostpointercapture', this.onPointerCancel);
     window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('blur', this.releaseAll);
   }
 
   detach(): void {
@@ -46,14 +47,16 @@ export class InputController {
     surface.removeEventListener('pointerdown', this.onPointerDown);
     surface.removeEventListener('pointermove', this.onPointerMove);
     surface.removeEventListener('pointerup', this.onPointerUp);
-    surface.removeEventListener('pointercancel', this.onPointerUp);
-    surface.removeEventListener('pointerleave', this.onPointerUp);
+    surface.removeEventListener('pointercancel', this.onPointerCancel);
+    surface.removeEventListener('lostpointercapture', this.onPointerCancel);
     window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('blur', this.releaseAll);
+    this.releaseAll();
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (this.surface.inert || event.button !== 0 || this.pointers.has(event.pointerId) || this.pointers.size >= MAX_CONTACTS) return;
     event.preventDefault();
-    if (this.pointers.size >= MAX_CONTACTS) return;
     this.surface.focus({ preventScroll: true });
     this.surface.setPointerCapture(event.pointerId);
     this.pointers.set(event.pointerId, {
@@ -62,7 +65,8 @@ export class InputController {
       y: this.normalizeY(event.clientY),
       down: true,
     });
-    this.scheduleFlush();
+    // Press/release edges must never be merged into a single animation frame.
+    this.flush();
   };
 
   private readonly onPointerMove = (event: PointerEvent): void => {
@@ -78,8 +82,39 @@ export class InputController {
     const pointer = this.pointers.get(event.pointerId);
     if (!pointer) return;
     event.preventDefault();
-    this.pointers.delete(event.pointerId);
-    this.scheduleFlush();
+    pointer.x = this.normalizeX(event.clientX);
+    pointer.y = this.normalizeY(event.clientY);
+    this.releasePointer(event.pointerId, pointer);
+  };
+
+  private readonly onPointerCancel = (event: PointerEvent): void => {
+    const pointer = this.pointers.get(event.pointerId);
+    if (!pointer) return;
+    event.preventDefault();
+    // Cancellation/capture-loss events may carry no usable coordinates.
+    this.releasePointer(event.pointerId, pointer);
+  };
+
+  private releasePointer(pointerId: number, pointer: ActivePointer): void {
+    pointer.down = false;
+    // Keep the contact ID and release position until the phone sees the lift.
+    this.flush();
+    this.pointers.delete(pointerId);
+    if (this.surface.hasPointerCapture(pointerId)) this.surface.releasePointerCapture(pointerId);
+  }
+
+  private readonly releaseAll = (): void => {
+    if (this.pointers.size > 0) {
+      for (const pointer of this.pointers.values()) pointer.down = false;
+      this.flush();
+      const pointerIds = [...this.pointers.keys()];
+      this.pointers.clear();
+      for (const pointerId of pointerIds) {
+        if (this.surface.hasPointerCapture(pointerId)) this.surface.releasePointerCapture(pointerId);
+      }
+    } else {
+      this.cancelPendingFlush();
+    }
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
@@ -150,14 +185,25 @@ export class InputController {
     if (this.pendingFlush !== 0) return;
     this.pendingFlush = window.requestAnimationFrame(() => {
       this.pendingFlush = 0;
-      const contacts: TouchContact[] = Array.from(this.pointers.values()).map((pointer) => ({
-        id: pointer.slot,
-        x: pointer.x,
-        y: pointer.y,
-        down: pointer.down,
-      }));
-      this.send({ type: 'touch', contacts });
+      this.flush();
     });
+  }
+
+  private flush(): void {
+    this.cancelPendingFlush();
+    const contacts: TouchContact[] = Array.from(this.pointers.values()).map((pointer) => ({
+      id: pointer.slot,
+      x: pointer.x,
+      y: pointer.y,
+      down: pointer.down,
+    }));
+    this.send({ type: 'touch', contacts });
+  }
+
+  private cancelPendingFlush(): void {
+    if (this.pendingFlush === 0) return;
+    window.cancelAnimationFrame(this.pendingFlush);
+    this.pendingFlush = 0;
   }
 
   private normalizeX(clientX: number): number {
