@@ -35,9 +35,7 @@ const micStatus = requiredElement<HTMLSpanElement>('mic-status');
 const muteButton = requiredElement<HTMLButtonElement>('btn-mute');
 const app = requiredElement<HTMLDivElement>('app');
 const screenContainer = requiredElement<HTMLDivElement>('screen-container');
-const viewerState = requiredElement<HTMLSpanElement>('viewer-state');
 const overlayTitle = requiredElement<HTMLHeadingElement>('overlay-title');
-const overlayEyebrow = requiredElement<HTMLParagraphElement>('overlay-eyebrow');
 const audioMaster = requiredElement<HTMLInputElement>('audio-master');
 const quickVolume = requiredElement<HTMLInputElement>('volume-quick');
 let sessionActive = false;
@@ -70,7 +68,6 @@ const video = new VideoPlayer(
     if (lastFrameArrival > 0) latencySampleMs = Math.max(0, now - lastFrameArrival);
     overlay.classList.add('hidden');
     app.dataset.session = 'live';
-    viewerState.textContent = 'LIVE';
   },
   () => connection.send({ type: 'keyframe' }),
   (width, height) => {
@@ -139,7 +136,7 @@ function resetSession(): void {
   void microphone.stop();
   micStatus.textContent = '';
   streamWidth = streamHeight = framesReceived = framesPainted = bytesReceived = lastFrameArrival = latencySampleMs = 0;
-  streamInfo.textContent = 'Waiting for a video stream';
+  streamInfo.textContent = '';
   canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
   overlay.classList.remove('hidden');
 }
@@ -166,17 +163,15 @@ function applyServerState(message: ServerMessage): void {
       const device = message.deviceName ?? 'PlayPort';
       const phone = message.message ?? null;
       const active = message.sessionActive === true;
-      setStatus(active ? 'live' : 'idle', active ? `${phone ?? 'iPhone'} connected` : `${device} ready`);
+      setStatus(active ? 'live' : 'idle', active ? 'Connected' : 'Waiting for iPhone');
       requiredElement('device-name').textContent = active ? (phone ?? 'iPhone') : device;
       if (!active) {
         resetSession();
-        viewerState.textContent = 'STANDBY';
-        setOverlay('Your next drive starts here.', 'Connect your iPhone to PlayPort to bring CarPlay to this screen.');
+        setOverlay('Connect your iPhone', 'Pair your iPhone with PlayPort over Bluetooth, then accept the CarPlay prompt.');
       } else {
         if (!sessionActive) {
-          viewerState.textContent = 'STARTING';
           app.dataset.session = 'connected';
-          setOverlay('You’re connected.', 'Getting the first picture from your iPhone. CarPlay will appear in a moment.', 'ALMOST THERE');
+          setOverlay('Starting CarPlay…', 'Waiting for video from your iPhone.');
         }
         sessionActive = true;
         canvas.inert = false;
@@ -193,8 +188,7 @@ function applyConnectionState(state: ConnectionState): void {
   switch (state) {
     case 'connecting':
       setStatus('idle', 'Connecting…');
-      viewerState.textContent = 'CONNECTING';
-      setOverlay('Finding your PlayPort.', 'Connecting to the server. Your screen will be ready in a moment.', 'CONNECTING');
+      setOverlay('Connecting…', 'Connecting to the PlayPort server.');
       break;
     case 'open':
       setStatus('idle', 'Server connected');
@@ -202,8 +196,7 @@ function applyConnectionState(state: ConnectionState): void {
     case 'closed':
       resetSession();
       setStatus('idle', 'Reconnecting…');
-      viewerState.textContent = 'RECONNECTING';
-      setOverlay('Let’s get you back.', 'The server connection was interrupted. We’ll reconnect automatically.', 'RECONNECTING');
+      setOverlay('Connection lost', 'Reconnecting to the server automatically.');
       break;
   }
 }
@@ -213,10 +206,9 @@ function setStatus(kind: 'live' | 'idle', text: string): void {
   statusText.textContent = text;
 }
 
-function setOverlay(title: string, text: string, eyebrow = 'READY WHEN YOU ARE'): void {
+function setOverlay(title: string, text: string): void {
   overlayTitle.textContent = title;
   overlayText.textContent = text;
-  overlayEyebrow.textContent = eyebrow;
 }
 
 function showError(message: string): void {
@@ -285,7 +277,6 @@ function toggleFocus(): void {
 clickButton('btn-focus', toggleFocus);
 clickButton('btn-exit-focus', toggleFocus);
 clickButton('btn-error-close', () => showError(''));
-clickButton('btn-viewer', () => canvas.focus());
 
 muteButton.addEventListener('click', () => {
   muted = !muted;
@@ -308,8 +299,7 @@ window.addEventListener('keydown', () => void unlockAudio(), { once: false });
 
 if (!token) {
   setStatus('idle', 'Access link needed');
-  viewerState.textContent = 'SETUP';
-  setOverlay('Your personal link is the key.', 'Open the viewer link printed by the PlayPort server. It includes the access token needed to connect.', 'ONE MORE STEP');
+  setOverlay('Open the viewer link', 'Use the HTTPS link printed by the PlayPort server to connect.');
 }
 
 if (typeof VideoDecoder === 'undefined') {
@@ -410,7 +400,7 @@ async function refreshDisplayInfo(): Promise<void> {
   displayFields.disabled = true;
   displayApply.disabled = true;
   displayStatus.dataset.error = 'false';
-  displayStatus.textContent = 'Loading your display settings…';
+  displayStatus.textContent = 'Loading…';
   try {
     const response = await fetch('/api/display');
     if (!response.ok) throw new Error(`Request failed (${response.status})`);
@@ -427,7 +417,7 @@ async function refreshDisplayInfo(): Promise<void> {
     if (hevcOption) {
       hevcOption.disabled = !hevcSupported;
       hevcOption.textContent = hevcSupported
-        ? 'H.265 / HEVC (sharper)'
+        ? 'H.265 / HEVC'
         : 'H.265 / HEVC (unavailable in this browser)';
     }
     if (!hevcSupported && info.hevc) displayCodec.value = 'h264';
@@ -463,7 +453,7 @@ async function applyDisplay(): Promise<void> {
     displayStatus.dataset.error = String(!response.ok || !body.ok);
     displayStatus.textContent =
       response.ok && body.ok
-        ? 'Applied. CarPlay is restarting — video returns in a few seconds.'
+        ? 'Applied. Restarting CarPlay…'
         : (body.error ?? `Request failed (${response.status})`);
   } catch (error) {
     displayStatus.dataset.error = 'true';
@@ -485,8 +475,7 @@ clickButton('btn-display-match', () => {
   displayWidthInput.value = String(even(window.innerWidth));
   displayHeightInput.value = String(even(window.innerHeight));
   displayStatus.textContent =
-    `Window physical pixels: ${displayWidthInput.value}×${displayHeightInput.value} (devicePixelRatio ${ratio}). ` +
-    'Put the browser in fullscreen first for a 1:1 mapping.';
+    `${displayWidthInput.value} × ${displayHeightInput.value} px. Use fullscreen to match the entire screen.`;
   selectMatchingPreset();
 });
 displayForm.addEventListener('submit', (event) => {
@@ -511,7 +500,7 @@ function updateStats(): void {
   framesReceived = 0;
   bytesReceived = 0;
   if (streamWidth === 0) {
-    streamInfo.textContent = 'Waiting for a video stream';
+    streamInfo.textContent = '';
     return;
   }
   const parts = [`${streamWidth} × ${streamHeight}`];
@@ -580,7 +569,7 @@ function ensureStreamSliders(): void {
     Array.from(audioStreams.querySelectorAll<HTMLElement>('[data-stream]'), (element) => element.dataset.stream ?? ''),
   );
   if (names.length === 0) {
-    audioStatus.textContent = 'No audio playing yet. Start music, navigation, or a call on your iPhone to mix its volume here.';
+    audioStatus.textContent = 'No audio playing.';
   } else {
     audioStatus.textContent = '';
   }
