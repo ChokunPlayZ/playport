@@ -112,6 +112,9 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
 
         override fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {
             log.debug("AirPlay command type={} params={}", type, params.keys.sorted().joinToString(","))
+            if (type == "modesChanged") {
+                log.info("CarPlay resource ownership resources={} appStates={}", params["resources"], params["appStates"])
+            }
         }
 
         override fun onDebugLog(message: String) {
