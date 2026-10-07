@@ -3,6 +3,7 @@ import { setupCarSettings } from './car';
 import { InputController } from './input';
 import { MicrophoneUplink } from './mic';
 import type { ServerMessage, WireMessage } from './protocol';
+import { connectionView, type ConnectionStatus, type StatusView } from './status';
 import { VideoPlayer } from './video';
 import { Connection, type ConnectionState } from './ws';
 
@@ -39,7 +40,11 @@ const screenContainer = requiredElement<HTMLDivElement>('screen-container');
 const overlayTitle = requiredElement<HTMLHeadingElement>('overlay-title');
 const audioMaster = requiredElement<HTMLInputElement>('audio-master');
 const quickVolume = requiredElement<HTMLInputElement>('volume-quick');
+const setupIndicator = requiredElement<HTMLSpanElement>('setup-indicator');
+const setupProgress = requiredElement<HTMLOListElement>('setup-progress');
 let sessionActive = false;
+let videoLive = false;
+let setupStatus: ConnectionStatus = { stage: 'waiting' };
 let muted = false;
 
 function fitScreen(): void {
@@ -69,6 +74,10 @@ const video = new VideoPlayer(
     if (lastFrameArrival > 0) latencySampleMs = Math.max(0, now - lastFrameArrival);
     overlay.classList.add('hidden');
     app.dataset.session = 'live';
+    if (!videoLive) {
+      videoLive = true;
+      renderSetupStatus();
+    }
   },
   () => connection.send({ type: 'keyframe' }),
   (width, height) => {
@@ -130,6 +139,7 @@ input.attach();
 
 function resetSession(): void {
   sessionActive = false;
+  videoLive = false;
   app.dataset.session = 'idle';
   canvas.inert = true;
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-remote]')) button.disabled = true;
@@ -165,19 +175,25 @@ function applyServerState(message: ServerMessage): void {
       const device = message.deviceName ?? 'PlayPort';
       const phone = message.message ?? null;
       const active = message.sessionActive === true;
-      setStatus(active ? 'live' : 'idle', active ? 'Connected' : 'Waiting for iPhone');
+      if (message.connectionStatus) setupStatus = message.connectionStatus;
       requiredElement('device-name').textContent = active ? (phone ?? 'iPhone') : device;
       if (!active) {
         resetSession();
-        setOverlay('Connect your iPhone', 'Pair your iPhone with PlayPort over Bluetooth, then accept the CarPlay prompt.');
       } else {
         if (!sessionActive) {
           app.dataset.session = 'connected';
-          setOverlay('Starting CarPlay…', 'Waiting for video from your iPhone.');
         }
         sessionActive = true;
         canvas.inert = false;
         for (const button of document.querySelectorAll<HTMLButtonElement>('[data-remote]')) button.disabled = false;
+      }
+      renderSetupStatus();
+      break;
+    }
+    case 'status': {
+      if (message.connectionStatus) {
+        setupStatus = message.connectionStatus;
+        renderSetupStatus();
       }
       break;
     }
@@ -189,23 +205,40 @@ function applyServerState(message: ServerMessage): void {
 function applyConnectionState(state: ConnectionState): void {
   switch (state) {
     case 'connecting':
-      setStatus('idle', 'Connecting…');
-      setOverlay('Connecting…', 'Connecting to the PlayPort server.');
+      renderStatus({ title: 'Connecting to PlayPort…', detail: 'Connecting this viewer to the PlayPort server.', kind: 'busy', step: -1, showSteps: false });
       break;
     case 'open':
-      setStatus('idle', 'Server connected');
+      renderStatus({ title: 'Server connected', detail: 'Reading the current iPhone connection status…', kind: 'busy', step: -1, showSteps: false });
       break;
     case 'closed':
       resetSession();
-      setStatus('idle', 'Reconnecting…');
-      setOverlay('Connection lost', 'Reconnecting to the server automatically.');
+      setupStatus = { stage: 'waiting' };
+      renderStatus({ title: 'Reconnecting to PlayPort…', detail: 'The viewer lost its server connection. Reconnecting automatically.', kind: 'busy', step: -1, showSteps: false });
       break;
   }
 }
 
-function setStatus(kind: 'live' | 'idle', text: string): void {
-  statusDot.dataset.state = kind;
-  statusText.textContent = text;
+function renderSetupStatus(): void {
+  renderStatus(connectionView(setupStatus, sessionActive, videoLive));
+}
+
+function renderStatus(view: StatusView): void {
+  statusDot.dataset.state = view.kind;
+  statusText.textContent = view.title;
+  statusText.title = view.detail;
+  setupIndicator.dataset.state = view.kind;
+  setupProgress.hidden = !view.showSteps;
+  for (const [index, item] of [...setupProgress.children].entries()) {
+    const state = index < view.step ? 'done' : index === view.step ? 'current' : 'pending';
+    (item as HTMLElement).dataset.state = state;
+    if (state === 'current') item.setAttribute('aria-current', 'step');
+    else item.removeAttribute('aria-current');
+    const marker = item.querySelector('.setup-step-marker');
+    if (marker) marker.textContent = state === 'done' ? '✓' : String(index + 1);
+    const label = item.lastElementChild?.textContent ?? '';
+    item.setAttribute('aria-label', `${label}: ${state === 'done' ? 'complete' : state === 'current' ? 'in progress' : 'pending'}`);
+  }
+  setOverlay(view.title, view.detail);
 }
 
 function setOverlay(title: string, text: string): void {
@@ -300,8 +333,7 @@ window.addEventListener('pointerdown', () => void unlockAudio(), { once: false }
 window.addEventListener('keydown', () => void unlockAudio(), { once: false });
 
 if (!token) {
-  setStatus('idle', 'Access link needed');
-  setOverlay('Open the viewer link', 'Use the HTTPS link printed by the PlayPort server to connect.');
+  renderStatus({ title: 'Open the viewer link', detail: 'Use the HTTPS link printed by the PlayPort server to connect.', kind: 'action', step: -1, showSteps: false });
 }
 
 if (typeof VideoDecoder === 'undefined') {

@@ -30,6 +30,7 @@ class Iap2WirelessControlClient(
         onReady: () -> Unit = {},
         onIncoming: (Iap2Frame) -> Unit = {},
         onProgress: (String) -> Unit = {},
+        onPhase: (Iap2WirelessControlPhase) -> Unit = {},
     ): Iap2WirelessControlResult {
         require(identification.wireless != null) {
             "Wireless control requires an Iap2IdentificationConfig with wireless transport"
@@ -47,10 +48,12 @@ class Iap2WirelessControlClient(
         if (identified.vehicleStatusEnabled != identification.vehicleStatusEnabled) {
             onProgress("iap2 no battery reading: not declaring an electric vehicle")
         }
+        onPhase(Iap2WirelessControlPhase.IDENTIFYING)
         Iap2IdentificationClient(session).identify(identified, requireRemaining(deadlineNanos))
         onProgress("iap2 identification accepted")
         var stage = Iap2WirelessControlStage.IDENTIFIED
 
+        onPhase(Iap2WirelessControlPhase.AUTHENTICATING)
         mfi.run(session, requireRemaining(deadlineNanos), onProgress)
         stage = Iap2WirelessControlStage.AUTHENTICATED
         onProgress("iap2 authentication accepted")
@@ -61,6 +64,7 @@ class Iap2WirelessControlClient(
         stage = Iap2WirelessControlStage.SUBSCRIBED
         onProgress("iap2 subscriptions sent")
         onReady()
+        onPhase(Iap2WirelessControlPhase.READY)
 
         var forwardedFrames = 0
         var wifiConfigurationsSent = 0
@@ -162,6 +166,7 @@ class Iap2WirelessControlClient(
                                 preTransportWiFiConfigurationsSent++
                             }
                             onProgress("iap2 tx=0x5703 accessory-wifi-configuration")
+                            onPhase(Iap2WirelessControlPhase.WIFI_CONFIGURATION_SENT)
                         }
                     }
 
@@ -171,6 +176,7 @@ class Iap2WirelessControlClient(
                         stage = later(stage, Iap2WirelessControlStage.CARPLAY_START_SENT)
                         carPlayStartSessionsSent++
                         onProgress("iap2 tx=0x4301 carplay-start-session")
+                        onPhase(Iap2WirelessControlPhase.CARPLAY_REQUESTED)
                     }
 
                     WIRELESS_CARPLAY_UPDATE -> {
@@ -208,6 +214,7 @@ class Iap2WirelessControlClient(
                             onProgress(
                                 "iap2 tx=0x5703 post-transport accessory-wifi-configuration",
                             )
+                            onPhase(Iap2WirelessControlPhase.WIFI_CONFIGURATION_SENT)
                         }
                     }
 
@@ -382,6 +389,11 @@ class Iap2WirelessCarPlayEndpoint(
         require(sourceVersion.isNotEmpty()) { "sourceVersion is required and must not be empty" }
         require('\u0000' !in sourceVersion) { "sourceVersion must not contain U+0000" }
     }
+}
+
+/** Observable milestones for callers presenting setup progress. */
+enum class Iap2WirelessControlPhase {
+    IDENTIFYING, AUTHENTICATING, READY, WIFI_CONFIGURATION_SENT, CARPLAY_REQUESTED,
 }
 
 enum class Iap2WirelessControlStage {

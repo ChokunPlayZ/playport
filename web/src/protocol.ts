@@ -1,4 +1,5 @@
 /** Binary wire framing shared with the server (`Wire.kt`). */
+import type { ConnectionStatus } from './status';
 
 export const WireType = {
   VideoConfig: 1,
@@ -104,6 +105,7 @@ export interface ServerMessage {
   micCodec?: string;
   micSamplesPerPacket?: number;
   micBitrate?: number;
+  connectionStatus?: ConnectionStatus;
 }
 
 /** Parses one binary WebSocket payload into a typed wire message. */

@@ -76,6 +76,7 @@ data class ServerMessage(
     val micCodec: String? = null,
     val micSamplesPerPacket: Int? = null,
     val micBitrate: Int? = null,
+    val connectionStatus: ConnectionStatus? = null,
 )
 
 private class WsClient(
@@ -134,6 +135,13 @@ class WebHub(
 
     @Volatile private var sessionActive = false
     @Volatile private var phoneName: String? = null
+    @Volatile private var airPlayConnecting = false
+    @Volatile var connectionStatus = ConnectionStatus(
+        stage = if (config.wireless) "preparing" else "waiting",
+        detail = if (config.wireless) null else "Wireless setup is disabled. Start the server with --wireless to connect over Bluetooth and Wi-Fi.",
+        wirelessEnabled = config.wireless,
+    )
+        private set
 
     fun setVideoCodec(type: Int, codec: VideoCodec) {
         codecsByStream[type] = codec
@@ -141,19 +149,50 @@ class WebHub(
 
     fun videoCodec(type: Int): VideoCodec? = codecsByStream[type]
 
+    @Synchronized
     fun setSessionState(active: Boolean, name: String?) {
         sessionActive = active
-        phoneName = name
-        broadcastJson(
-            ServerMessage(
-                type = "session",
-                deviceName = config.deviceName,
-                sessionActive = active,
-                viewers = clients.size,
-                message = name,
-            ),
+        airPlayConnecting = false
+        if (!active || name != null) phoneName = name
+        connectionStatus = connectionStatus.copy(
+            stage = if (active) "connected" else if (config.wireless) "reconnecting" else "waiting",
+            detail = if (active) null else if (config.wireless) "The iPhone disconnected. PlayPort will retry automatically." else connectionStatus.detail,
         )
+        broadcastJson(stateMessage("session"))
     }
+
+    @Synchronized
+    fun setPhoneName(name: String) {
+        phoneName = name
+        broadcastJson(stateMessage("session"))
+    }
+
+    @Synchronized
+    fun beginAirPlayConnection() {
+        airPlayConnecting = true
+        setConnectionStatus(connectionStatus.copy(stage = "starting_carplay", detail = null))
+    }
+
+    /** Late Bluetooth events must not replace progress from the Wi-Fi connection or live session. */
+    @Synchronized
+    fun setConnectionStatus(status: ConnectionStatus, fromBootstrap: Boolean = false) {
+        if (fromBootstrap && (sessionActive || airPlayConnecting)) return
+        if (connectionStatus == status) return
+        connectionStatus = status
+        broadcastJson(stateMessage("status"))
+    }
+
+    @Synchronized
+    internal fun stateMessage(type: String = "hello"): ServerMessage = ServerMessage(
+        type = type,
+        deviceName = config.deviceName,
+        sessionActive = sessionActive,
+        width = display.width,
+        height = display.height,
+        viewers = clients.size,
+        message = phoneName,
+        connectionStatus = connectionStatus,
+    )
 
     fun broadcastVideoConfig(type: Int, codecData: ByteArray) {
         val codec = codecsByStream[type] ?: VideoCodec.H264
@@ -325,7 +364,10 @@ class WebHub(
                     return@webSocket
                 }
                 val client = WsClient(Channel(capacity = SEND_QUEUE_CAPACITY))
-                clients.add(client)
+                synchronized(this@WebHub) {
+                    clients.add(client)
+                    client.channel.trySend(Frame.Text(json.encodeToString(ServerMessage.serializer(), stateMessage())))
+                }
                 val wsSession = this
                 val writer = launch {
                     try {
@@ -337,22 +379,6 @@ class WebHub(
                     }
                 }
                 try {
-                    wsSession.send(
-                        Frame.Text(
-                            json.encodeToString(
-                                ServerMessage.serializer(),
-                                ServerMessage(
-                                    type = "hello",
-                                    deviceName = config.deviceName,
-                                    sessionActive = sessionActive,
-                                    width = display.width,
-                                    height = display.height,
-                                    viewers = clients.size,
-                                    message = phoneName,
-                                ),
-                            ),
-                        ),
-                    )
                     // Replay codec/audio setup so a viewer that joins late can decode.
                     configByStream.forEach { (type, value) ->
                         client.channel.trySend(
@@ -446,11 +472,13 @@ class WebHub(
         )
     }.toString()
 
+    @Synchronized
     private fun statusJson(): String = kotlinx.serialization.json.buildJsonObject {
         put("deviceName", kotlinx.serialization.json.JsonPrimitive(config.deviceName))
         put("sessionActive", kotlinx.serialization.json.JsonPrimitive(sessionActive))
         put("phone", phoneName?.let { kotlinx.serialization.json.JsonPrimitive(it) } ?: kotlinx.serialization.json.JsonNull)
         put("viewers", kotlinx.serialization.json.JsonPrimitive(clients.size))
+        put("connectionStatus", json.encodeToJsonElement(ConnectionStatus.serializer(), connectionStatus))
         put(
             "display",
             kotlinx.serialization.json.buildJsonObject {

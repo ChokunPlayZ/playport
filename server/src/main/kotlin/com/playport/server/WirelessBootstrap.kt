@@ -5,6 +5,7 @@ import com.shilapi.xcertplay.mfi.Iap2MfiAuthenticationClient
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import com.shilapi.xcertplay.transport.Iap2WirelessCarPlayEndpoint
 import com.shilapi.xcertplay.transport.Iap2WirelessControlClient
+import com.shilapi.xcertplay.transport.Iap2WirelessControlPhase
 import com.shilapi.xcertplay.transport.Iap2WirelessControlTerminal
 import com.shilapi.xcertplay.transport.Iap2WirelessIdentification
 import java.io.Closeable
@@ -25,6 +26,11 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
     @Volatile private var stopped = false
     @Volatile var running = false
         private set
+    private var wifiSsid: String? = null
+
+    private fun status(stage: String, detail: String? = null) {
+        if (!stopped) server.hub.setConnectionStatus(ConnectionStatus(stage, detail, wifiSsid), fromBootstrap = true)
+    }
 
     fun start() {
         Thread(::run, "wireless-bootstrap").apply {
@@ -37,8 +43,10 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
         running = true
         try {
             val config = server.config
+            status("preparing")
             val wifi = WifiInfo.detect(config)
             if (wifi == null) {
+                status("error", "No Wi-Fi network is configured. Set the Wi-Fi name and password on the server, then restart it.")
                 log.warn(
                     "wireless bootstrap skipped: no Wi-Fi network detected. " +
                         "Pass the Wi-Fi the iPhone should use: " +
@@ -47,20 +55,24 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
                 )
                 return
             }
+            wifiSsid = wifi.ssid
             if (!wifi.ssid.isNullOrBlank() && config.wifiPassphrase.isNullOrBlank()) {
                 log.warn("no --wifi-passphrase configured; the phone must already know network {}", wifi.ssid)
             }
             val bridgePath = resolveBridgePath(config.bluetoothBridge)
             if (bridgePath == null) {
+                status("error", "The Bluetooth helper is unavailable. Install the Bluetooth helper on the server, then restart PlayPort.")
                 log.warn(
                     "wireless bootstrap skipped: bt-bridge helper not found; " +
                         "build it with macos/bt-bridge/build.sh or pass --bt-bridge",
                 )
                 return
             }
+            status("finding_iphone")
             val deviceAddress = config.bluetoothDeviceAddress?.takeIf { it.isNotBlank() }
                 ?: BluetoothBridge.findPairedIphone(bridgePath)
             if (deviceAddress == null) {
+                status("pairing_required", "No paired iPhone was found. Keep Settings → Bluetooth open on your iPhone and pair it using the server’s Bluetooth helper.")
                 log.warn("wireless bootstrap skipped: no paired iPhone found; pass --bt-address AA:BB:CC:DD:EE:FF")
                 return
             }
@@ -68,6 +80,7 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
             server.bluetoothAddress = hostBluetoothMac
             log.info("wireless bootstrap: iPhone={} hostBt={} wifi={} ch={}", deviceAddress, hostBluetoothMac, wifi.ssid, wifi.channel)
 
+            status("bluetooth_connecting")
             val stream = BluetoothBridge.open(bridgePath, deviceAddress).also { bridgeProcess = it }
             val channel = Iap2Session.openWireless(stream, traceContext = "wireless-rfcomm", onTrace = { log.debug(it) })
             log.info("wireless iAP2 session started; waiting for the Bluetooth bridge to open RFCOMM")
@@ -104,6 +117,14 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
                 timeoutMillis = Iap2WirelessControlClient.NO_TIMEOUT_MILLIS,
                 onReady = { log.info("wireless bootstrap accepted by the iPhone; waiting for the Wi-Fi handoff") },
                 onProgress = { log.debug("wireless $it") },
+                onPhase = { phase ->
+                    status(when (phase) {
+                        Iap2WirelessControlPhase.IDENTIFYING -> "identifying"
+                        Iap2WirelessControlPhase.AUTHENTICATING -> "authenticating"
+                        Iap2WirelessControlPhase.READY, Iap2WirelessControlPhase.CARPLAY_REQUESTED -> "awaiting_carplay"
+                        Iap2WirelessControlPhase.WIFI_CONFIGURATION_SENT -> "wifi_connecting"
+                    })
+                },
             )
             if (!stopped) {
                 when (result.terminal) {
@@ -115,10 +136,18 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
                         )
                     Iap2WirelessControlTerminal.TIMED_OUT -> log.info("wireless bootstrap timed out")
                 }
+                if (result.terminal == Iap2WirelessControlTerminal.TIMED_OUT || result.wifiConfigurationsSent == 0) {
+                    status("reconnecting", "The Bluetooth connection ended before setup finished. Keep your iPhone nearby and unlocked; PlayPort will retry automatically.")
+                }
             }
         } catch (error: Exception) {
-            if (!stopped) log.warn("wireless bootstrap failed: {}", error.message)
+            if (!stopped) {
+                log.warn("wireless bootstrap failed: {}", error.message)
+                status("error", "Could not complete wireless setup. Check Bluetooth, the saved pairing, and the Wi-Fi settings. PlayPort will retry automatically.")
+            }
         } finally {
+            bridgeProcess?.close()
+            bridgeProcess = null
             running = false
         }
     }

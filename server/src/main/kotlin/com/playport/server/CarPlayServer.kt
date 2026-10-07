@@ -101,14 +101,21 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
 
         override fun onSessionEnded(session: AirPlaySession) {
             log.info("CarPlay session ended peer={}", session.host)
-            if (activeSession === session) activeSession = null
+            if (activeSession !== session) return
+            activeSession = null
             bridge.endMicrophone()
             hub.setSessionState(false, null)
         }
 
         override fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {
             log.info("iPhone connected name={} model={} deviceId={}", info.name, info.model, info.deviceId)
-            hub.setSessionState(true, info.name)
+            if (activeSession === session) hub.setPhoneName(info.name)
+        }
+
+        override fun onPairing(session: AirPlaySession) {
+            if (activeSession === session) {
+                hub.setConnectionStatus(hub.connectionStatus.copy(stage = "pairing", detail = "Accept the CarPlay pairing prompt on your iPhone. If asked for a PIN, enter $PAIRING_PIN."))
+            }
         }
 
         override fun onTransportError(message: String) {
@@ -182,9 +189,12 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
                     media = media,
                 )
                 activeSession = session
+                hub.beginAirPlayConnection()
                 session.start()
             } catch (error: Exception) {
                 log.warn("AirPlay session bring-up failed: {}", error.message)
+                hub.setSessionState(false, null)
+                hub.setConnectionStatus(hub.connectionStatus.copy(stage = "error", detail = "Could not start CarPlay. Check the iPhone’s CarPlay settings and try again."))
                 runCatching { socket.close() }
             }
         }
@@ -335,6 +345,7 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
 
     private fun restartWireless() {
         if (!config.wireless) return
+        hub.setConnectionStatus(hub.connectionStatus.copy(stage = "reconnecting", detail = "Restarting wireless setup. Your iPhone will reconnect automatically."))
         lastBootstrapAt = System.currentTimeMillis()
         val current = wireless
         wireless = null

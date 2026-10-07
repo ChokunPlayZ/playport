@@ -30,6 +30,7 @@ interface AirPlaySessionListener {
     fun onVideoFrameRendered(session: AirPlaySession) {}
     fun onTransportError(message: String) {}
     fun onDeviceInfo(session: AirPlaySession, info: AirPlayDeviceInfo) {}
+    fun onPairing(session: AirPlaySession) {}
     fun onHostUiRequested(session: AirPlaySession) {}
     fun onCommand(session: AirPlaySession, type: String, params: Map<String, Any?>) {}
     fun onDebugLog(message: String) {}
@@ -360,10 +361,13 @@ class AirPlaySession(
 
         val path = request.path.lowercase()
         return when {
-            path.endsWith("/pair-setup") -> RtspMessage.Response(
-                headers = mapOf("Content-Type" to PAIRING_CONTENT_TYPE),
-                body = pairSetup.handle(request.body),
-            )
+            path.endsWith("/pair-setup") -> {
+                listener.onPairing(this)
+                RtspMessage.Response(
+                    headers = mapOf("Content-Type" to PAIRING_CONTENT_TYPE),
+                    body = pairSetup.handle(request.body),
+                )
+            }
             path.endsWith("/pair-verify") -> RtspMessage.Response(
                 headers = mapOf("Content-Type" to PAIRING_CONTENT_TYPE),
                 body = pairVerify.handle(request.body),

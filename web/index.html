@@ -58,8 +58,17 @@
           <div id="screen-container">
             <div id="surface"><canvas id="screen" width="1280" height="720" tabindex="0" aria-label="Live CarPlay screen. Use touch or the keyboard to control your iPhone." inert></canvas></div>
             <div id="overlay">
-              <h2 id="overlay-title">Connect your iPhone</h2>
-              <p id="overlay-text" role="status">Pair your iPhone with PlayPort over Bluetooth, then accept the CarPlay prompt.</p>
+              <span id="setup-indicator" data-state="busy" aria-hidden="true"></span>
+              <div class="setup-copy" role="status" aria-atomic="true">
+                <h2 id="overlay-title">Connecting to PlayPort…</h2>
+                <p id="overlay-text">Connecting this viewer to the PlayPort server.</p>
+              </div>
+              <ol id="setup-progress" aria-label="Wireless connection progress" hidden>
+                <li data-state="pending"><span class="setup-step-marker" aria-hidden="true">1</span><span>Bluetooth</span></li>
+                <li data-state="pending"><span class="setup-step-marker" aria-hidden="true">2</span><span>Authorize</span></li>
+                <li data-state="pending"><span class="setup-step-marker" aria-hidden="true">3</span><span>Wi-Fi</span></li>
+                <li data-state="pending"><span class="setup-step-marker" aria-hidden="true">4</span><span>CarPlay</span></li>
+              </ol>
               <button id="btn-setup" class="quiet-button">Connection help</button>
             </div>
           </div>
