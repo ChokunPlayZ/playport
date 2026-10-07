@@ -69,7 +69,7 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
 
             val stream = BluetoothBridge.open(bridgePath, deviceAddress).also { bridgeProcess = it }
             val channel = Iap2Session.openWireless(stream, traceContext = "wireless-rfcomm", onTrace = { log.debug(it) })
-            log.info("wireless iAP2 CSM channel opened over RFCOMM")
+            log.info("wireless iAP2 session started; waiting for the Bluetooth bridge to open RFCOMM")
 
             val identification = Iap2IdentificationConfig(
                 name = server.config.deviceName,

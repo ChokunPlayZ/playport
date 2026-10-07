@@ -128,14 +128,14 @@ func listPaired() {
 
 final class Bridge: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private var channel: IOBluetoothRFCOMMChannel?
+    private var openTimer: Timer?
+    private var channelOpened = false
 
     func start(address: String) {
-        guard let devices = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] else {
-            fail("paired device list unavailable")
-        }
-        let target = normalize(address)
-        guard let device = devices.first(where: { normalize($0.addressString ?? "") == target }) else {
-            fail("device \(address) is not paired; pair it in System Settings > Bluetooth first")
+        // Enumerating pairedDevices can mark a cloud-linked iPhone as paired even
+        // after its Classic bond was removed. Query the addressed device directly.
+        guard let device = IOBluetoothDevice(addressString: normalize(address)), device.isPaired() else {
+            fail("device \(address) has no saved pairing; run --pair \(address) with the iPhone's Bluetooth settings open")
         }
         let uuid = IOBluetoothSDPUUID(data: Data(hexUUID: iap2UUIDString))
         let queried = withTimeout(12.0, "SDP query") { device.getServiceRecord(for: uuid) }
@@ -145,17 +145,24 @@ final class Bridge: NSObject, IOBluetoothRFCOMMChannelDelegate {
         var channelID: BluetoothRFCOMMChannelID = 0
         let channelStatus = record.getRFCOMMChannelID(&channelID)
         guard channelStatus == kIOReturnSuccess else {
-            fail("could not read the RFCOMM channel id (status 0x\(String(channelStatus, radix: 16)))")
+            fail("could not read the RFCOMM channel id (status \(formatStatus(channelStatus)))")
         }
         var rfcommChannel: IOBluetoothRFCOMMChannel?
         let openStatus = device.openRFCOMMChannelAsync(&rfcommChannel, withChannelID: channelID, delegate: self)
         guard openStatus == kIOReturnSuccess, let opened = rfcommChannel else {
-            fail("could not open the RFCOMM channel (status 0x\(String(openStatus, radix: 16)))")
+            fail("could not open the RFCOMM channel (status \(formatStatus(openStatus)))")
         }
         channel = opened
         FileHandle.standardError.write("bt-bridge: RFCOMM channel \(channelID) opening to \(address)\n".data(using: .utf8)!)
-        pumpStdin()
-        RunLoop.main.run()
+        // The open callback may run before openRFCOMMChannelAsync returns.
+        if !channelOpened {
+            openTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { _ in
+                fail("RFCOMM did not open within 30s; if the saved pairing keys differ, forget the Mac on the iPhone and run --force-pair \(address)")
+            }
+        }
+        // IOBluetooth does not retain its delegate. Keep it alive while waiting to
+        // install the stdin handler, which will retain it after the channel opens.
+        withExtendedLifetime(self) { RunLoop.main.run() }
     }
 
     private func pumpStdin() {
@@ -166,20 +173,37 @@ final class Bridge: NSObject, IOBluetoothRFCOMMChannelDelegate {
                 FileHandle.standardError.write("bt-bridge: stdin closed\n".data(using: .utf8)!)
                 exit(0)
             }
-            guard let channel = self.channel else { return }
+            guard let channel = self.channel, channel.isOpen() else {
+                fail("RFCOMM write failed: channel is not open (kIOReturnNotOpen, \(formatStatus(kIOReturnNotOpen)))")
+            }
             var buffer = [UInt8](data)
-            let status = channel.writeSync(&buffer, length: UInt16(buffer.count))
-            if status != kIOReturnSuccess {
-                FileHandle.standardError.write("bt-bridge: write failed 0x\(String(status, radix: 16))\n".data(using: .utf8)!)
+            let mtu = Int(channel.getMTU())
+            guard mtu > 0 else { fail("RFCOMM has no negotiated MTU") }
+            buffer.withUnsafeMutableBytes { bytes in
+                var offset = 0
+                while offset < bytes.count {
+                    let count = min(mtu, bytes.count - offset, Int(UInt16.max))
+                    let status = channel.writeSync(bytes.baseAddress!.advanced(by: offset), length: UInt16(count))
+                    guard status == kIOReturnSuccess else {
+                        fail("RFCOMM write failed (status \(formatStatus(status))); stopping the bridge")
+                    }
+                    offset += count
+                }
             }
         }
     }
 
     func rfcommChannelOpenComplete(_ sender: IOBluetoothRFCOMMChannel!, status error: IOReturn) {
-        if error == kIOReturnSuccess {
+        openTimer?.invalidate()
+        openTimer = nil
+        if error == kIOReturnSuccess, let sender = sender, sender.isOpen() {
+            guard !channelOpened else { return }
+            channelOpened = true
+            channel = sender
             FileHandle.standardError.write("bt-bridge: RFCOMM channel open\n".data(using: .utf8)!)
+            pumpStdin()
         } else {
-            fail("RFCOMM open failed (status 0x\(String(error, radix: 16)))")
+            fail("RFCOMM open failed (status \(formatStatus(error))); the channel is not open")
         }
     }
 
