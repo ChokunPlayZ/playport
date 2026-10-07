@@ -92,7 +92,7 @@ the browser** (no server-side decoding or re-encoding), and the browser decodes 
 - **Calls and Siri** — when the phone opens its speech/telephony stream, the browser asks for the
   microphone and streams audio back (PCM, or Opus when requested).
 - **Display control** — live resolution, portrait/landscape, frame rate, CarPlay UI size and
-  H.264/HEVC selection, with presets from 800×480 up to 4K.
+  H.264/HEVC selection, with common car head unit presets from 800×480 to 1920×720.
 - **Quality tuning** — "Match this window" advertises your display's physical pixels for 1:1
   sharpness; a stats HUD shows resolution, fps, bitrate, drops, decode queue and latency.
 - **Audio mixer** — master plus per-stream volumes (media, navigation, Siri/calls).
@@ -153,7 +153,9 @@ macos/bt-bridge/bt-bridge --pair AA:BB:CC:DD:EE:FF      # confirm the code on th
 ```
 
 Open the **https://** URL the server prints (it contains an access token) and accept the
-self-signed certificate warning once. HTTPS is required because browsers only expose WebCodecs —
+self-signed certificate warning once. The access token is saved in `~/.playport/browser-token`
+and remembered by your browser, so you can reopen the dashboard after server or browser restarts
+without copying a new URL. HTTPS is required because browsers only expose WebCodecs —
 the video/audio decoders — in secure contexts. On the iPhone, accept the CarPlay prompt; if it asks
 for a code, enter **3939**. The dashboard appears in the browser as soon as the first video frame
 arrives.
@@ -217,8 +219,8 @@ against the certificate:
 The phone renders CarPlay at whatever resolution PlayPort advertises, so the **Display** panel in
 the browser is the quality control room:
 
-- **Landscape presets** — 800×480, 1280×720, 1920×720, 1920×1080, 2560×1440, 3840×2160.
-- **Portrait presets** — 720×1280, 1080×1920 (portrait is simply `height > width`).
+- **Head unit presets** — 800×480, 1024×600, 1280×480, 1280×720, 1280×800, 1440×540, 1920×720.
+- **Custom dimensions** — enter any supported width and height; portrait is simply `height > width`.
 - **CarPlay UI size** — Smaller/Small/Default/Large requests a proportionally larger canvas, so
   CarPlay draws finer controls (75–115%).
 - **Video codec** — H.265/HEVC is sharper at the same bitrate and is offered when the browser can
@@ -226,6 +228,13 @@ the browser is the quality control room:
 - **Frame rate** — 60 fps for smoothness, 30 fps to spend more bitrate on detail.
 - **Match this window** — advertises your window's *physical* pixels (`CSS × devicePixelRatio`), so
   the canvas maps 1:1 to the display. Best used fullscreen.
+
+Resolutions vary by model, trim, year and market. Examples include 800×480 and 1280×720 in
+[Honda Gathers systems](https://www.honda.co.jp/navi/pdf/spec/2205_navispec.pdf), 1280×720 in the
+[Toyota Corolla Cross Advance AVX](https://www.toyota.com.my/content/dam/malaysia/servicing-support/owners-manual/corolla-cross/accessories-manual/nov-2024/advance-avx-grs.pdf),
+and 1280×480 or 1440×540 in
+[BMW iDrive displays](https://www.press.bmwgroup.com/netherlands/article/detail/T0252085NL/bmw-presenteert-modelupdates-voor-voorjaar-2016).
+Choose your head unit's dimensions rather than a preset based only on its brand.
 
 Applying a change restarts CarPlay (the phone reconnects in a few seconds). Values persist in
 `~/.playport/config.json`. The same knobs exist as flags for a fixed setup:
@@ -285,7 +294,7 @@ Bluetooth identification. CLI logo files must be square PNGs, 32–1024 pixels a
 | `--rhd`, `--lhd` | Shortcuts for right/left driver side; override the saved setting | — |
 | `--bind <address>` | Bind address | auto-detect LAN |
 | `--identity-dir <path>` | Directory containing `offline-mfi/` | `./identity` |
-| `--state-dir <path>` | Identity, pairings, TLS, config | `~/.playport` |
+| `--state-dir <path>` | Identity, pairings, TLS, config, browser token | `~/.playport` |
 | `--mfi-server`, `--mfi-token` | Remote MFi service instead of local keys | — |
 | `--wireless` | Enable the Bluetooth/Wi-Fi bootstrap | off |
 | `--wifi-ssid`, `--wifi-passphrase`, `--wifi-channel`, `--wifi-security` | Network handed to the phone | auto-detect SSID |
@@ -293,7 +302,7 @@ Bluetooth identification. CLI logo files must be square PNGs, 32–1024 pixels a
 | `--bt-bridge <path>` | Bluetooth helper binary | `macos/bt-bridge/bt-bridge` |
 | `--mdns <backend>` | `auto`, `dns-sd` or `jmdns` | `auto` (dns-sd on macOS) |
 | `--http` | Serve plain HTTP (WebCodecs then only works on localhost) | off |
-| `--token <token>` | Fixed browser access token | random per start |
+| `--token <token>` | Replace the saved browser access token | generated once, then reused |
 
 ## Troubleshooting
 
@@ -314,7 +323,10 @@ Bluetooth identification. CLI logo files must be square PNGs, 32–1024 pixels a
 ## Security and privacy
 
 - The server binds the AirPlay port to your LAN address; the browser UI is HTTPS with a
-  self-signed certificate and an access token (regenerated every start unless `--token` is set).
+  self-signed certificate and an access token saved in `~/.playport/browser-token` (or your
+  `--state-dir`). Use `--token <token>` to replace it, or delete that file while the server is
+  stopped to generate a new token on the next start. After replacing it, open the newly printed
+  URL in each browser to update its remembered token.
 - The MFi private key never leaves the machine and is never sent to the browser; it is only used to
   sign the iPhone's challenge.
 - State files live in `~/.playport` with owner-only permissions where the filesystem supports it.

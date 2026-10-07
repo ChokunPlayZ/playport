@@ -151,7 +151,7 @@ data class ServerConfig(
                   --rhd, --lhd              Shortcuts for right/left driver side
                   --bind <address>          Bind address (default: auto-detect LAN address)
                   --identity-dir <path>     Directory containing offline-mfi/ (default: ./identity)
-                  --state-dir <path>        AirPlay identity + pairing state (default: ~/.playport)
+                  --state-dir <path>        Identity, pairings, TLS, settings and browser token (default: ~/.playport)
                   --mfi-server <url>        Remote MFi server address (alternative to offline identity)
                   --mfi-token <token>       Remote MFi bearer token
                   --wireless                Enable the Bluetooth wireless bootstrap
@@ -163,7 +163,7 @@ data class ServerConfig(
                   --bt-bridge <path>        Path to the macOS bt-bridge helper
                   --mdns <backend>          auto | dns-sd | jmdns (default: auto)
                   --http                    Serve the UI over plain HTTP (WebCodecs then only works on localhost)
-                  --token <token>           Browser access token (default: generated per start)
+                  --token <token>           Replace the saved browser access token (default: generated once)
                 """.trimIndent(),
             )
         }

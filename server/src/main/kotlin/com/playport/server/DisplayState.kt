@@ -44,16 +44,15 @@ class DisplayState(width: Int, height: Int, fps: Int, uiScale: Int, hevc: Boolea
             else -> null
         }
 
-        /** Landscape and portrait presets offered in the web UI. */
+        /** Common car head unit resolutions offered in the web UI. */
         val PRESETS = listOf(
-            Preset("1280 x 720", 1280, 720, "landscape"),
-            Preset("1920 x 720", 1920, 720, "landscape"),
-            Preset("1920 x 1080", 1920, 1080, "landscape"),
-            Preset("2560 x 1440", 2560, 1440, "landscape"),
-            Preset("3840 x 2160", 3840, 2160, "landscape"),
             Preset("800 x 480", 800, 480, "landscape"),
-            Preset("720 x 1280", 720, 1280, "portrait"),
-            Preset("1080 x 1920", 1080, 1920, "portrait"),
+            Preset("1024 x 600", 1024, 600, "landscape"),
+            Preset("1280 x 480", 1280, 480, "landscape"),
+            Preset("1280 x 720", 1280, 720, "landscape"),
+            Preset("1280 x 800", 1280, 800, "landscape"),
+            Preset("1440 x 540", 1440, 540, "landscape"),
+            Preset("1920 x 720", 1920, 720, "landscape"),
         )
     }
 }

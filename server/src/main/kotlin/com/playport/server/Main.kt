@@ -13,18 +13,8 @@ fun main(args: Array<String>) {
     val identityDir = Path.of("identity").toAbsolutePath().normalize()
     val stateDir = Path.of(System.getProperty("user.home"), ".playport")
 
-    // First pass: honour --state-dir/--identity-dir before looking for a saved config.
-    val bootstrap = ServerConfig.fromArgs(args, ServerConfig(identityDir = identityDir, stateDir = stateDir))
-    val store = ConfigStore(bootstrap.stateDir)
-    val saved = store.load()
-    // Second pass: saved settings are defaults; CLI flags still win.
-    val config = saved?.let { persisted ->
-        ServerConfig.fromArgs(args, persisted.toServerDefaults(bootstrap.identityDir, bootstrap.stateDir))
-    } ?: bootstrap
-
-    if (saved != null) {
-        log.info("loaded settings from {}", bootstrap.stateDir.resolve("config.json"))
-    }
+    val config = loadServerConfig(args, ServerConfig(identityDir = identityDir, stateDir = stateDir))
+    val store = ConfigStore(config.stateDir)
 
     val server = CarPlayServer(config, store)
     try {
@@ -92,6 +82,19 @@ fun main(args: Array<String>) {
         },
     )
     Thread.currentThread().join()
+}
+
+internal fun loadServerConfig(args: Array<String>, defaults: ServerConfig): ServerConfig {
+    // First pass: honour --state-dir/--identity-dir before reading saved state.
+    val bootstrap = ServerConfig.fromArgs(args, defaults)
+    val saved = ConfigStore(bootstrap.stateDir).load()
+    // Second pass: saved settings are defaults; CLI flags still win.
+    val parsed = saved?.let { persisted ->
+        LoggerFactory.getLogger("playport").info("loaded settings from {}", bootstrap.stateDir.resolve("config.json"))
+        ServerConfig.fromArgs(args, persisted.toServerDefaults(bootstrap.identityDir, bootstrap.stateDir))
+    } ?: bootstrap
+    val overrideToken = parsed.accessToken.takeIf { args.any { it.substringBefore('=') == "--token" } }
+    return parsed.copy(accessToken = BrowserAccessTokenStore.loadOrCreate(parsed.stateDir, overrideToken))
 }
 
 private fun projectVersion(): String =
