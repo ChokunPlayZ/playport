@@ -7,11 +7,17 @@ interface StreamState {
   name: string;
   decoder: AudioDecoder | null;
   nextPlayTime: number;
+  bufferSeconds: number;
+  sources: Set<AudioBufferSourceNode>;
+  active: boolean;
   gain: GainNode;
 }
 
-const MIN_LATENCY_SECONDS = 0.12;
-const MAX_LATENCY_SECONDS = 0.35;
+// Main high audio is delivered in bursts and negotiates a 1 s playout latency with the phone.
+const MUSIC_BUFFER_SECONDS = 1;
+const LIVE_BUFFER_SECONDS = 0.12;
+const SCHEDULE_HEADROOM_SECONDS = 0.02;
+const MAX_EXTRA_BUFFER_SECONDS = 1;
 
 /** Decodes and plays CarPlay audio streams (AAC-LC, Opus, LPCM) via Web Audio. */
 export class AudioEngine {
@@ -65,6 +71,10 @@ export class AudioEngine {
       name: message.name,
       decoder: null,
       nextPlayTime: 0,
+      bufferSeconds: message.streamType === 102 || message.name === 'media'
+        ? MUSIC_BUFFER_SECONDS : LIVE_BUFFER_SECONDS,
+      sources: new Set(),
+      active: true,
       gain: streamGain,
     };
     if (message.codec === AudioCodec.AacLc || message.codec === AudioCodec.Opus) {
@@ -143,6 +153,8 @@ export class AudioEngine {
     const state = this.streams.get(streamType);
     if (!state) return;
     this.streams.delete(streamType);
+    state.active = false;
+    this.clearScheduledAudio(state);
     runCatchingDisconnect(state.gain);
     if (state.decoder) {
       try {
@@ -154,7 +166,7 @@ export class AudioEngine {
   }
 
   private playAudioData(state: StreamState, data: AudioData): void {
-    if (!this.unlocked) return;
+    if (!this.unlocked || !state.active) return;
     const numberOfChannels = Math.max(1, data.numberOfChannels);
     const buffer = this.context.createBuffer(numberOfChannels, data.numberOfFrames, data.sampleRate);
     for (let channel = 0; channel < numberOfChannels; channel += 1) {
@@ -185,14 +197,36 @@ export class AudioEngine {
 
   private schedule(state: StreamState, buffer: AudioBuffer): void {
     const now = this.context.currentTime;
-    if (state.nextPlayTime < now + MIN_LATENCY_SECONDS || state.nextPlayTime > now + MAX_LATENCY_SECONDS) {
-      state.nextPlayTime = now + MIN_LATENCY_SECONDS;
+    if (state.nextPlayTime < now + SCHEDULE_HEADROOM_SECONDS ||
+        state.nextPlayTime > now + state.bufferSeconds + MAX_EXTRA_BUFFER_SECONDS) {
+      // Rebuffer only after a real underrun or excessive backlog. Moving the play time backward
+      // without cancelling queued sources would play multiple frames over one another.
+      this.clearScheduledAudio(state);
+      state.nextPlayTime = now + state.bufferSeconds;
     }
     const source = this.context.createBufferSource();
     source.buffer = buffer;
     source.connect(state.gain);
+    state.sources.add(source);
+    source.onended = () => {
+      state.sources.delete(source);
+      runCatchingDisconnect(source);
+    };
     source.start(state.nextPlayTime);
     state.nextPlayTime += buffer.duration;
+  }
+
+  private clearScheduledAudio(state: StreamState): void {
+    for (const source of state.sources) {
+      source.onended = null;
+      try {
+        source.stop();
+      } catch {
+        // Already stopped.
+      }
+      runCatchingDisconnect(source);
+    }
+    state.sources.clear();
   }
 }
 
