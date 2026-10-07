@@ -49,7 +49,8 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
         config.uiScale,
         config.hevc,
     )
-    val hub = WebHub(config, display)
+    val branding = CarBrandingState(config)
+    val hub = WebHub(config, display, branding)
     val bridge = WebBridge(hub)
     val media = CarPlayMediaEngine(bridge, microphoneEnabled = true, audioCaptureDirectory = null)
 
@@ -64,28 +65,32 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
     private val closed = AtomicBoolean(false)
 
     val airPlayConfig: AirPlayConfig
-        get() = AirPlayConfig(
-            deviceName = config.deviceName,
-            deviceId = deviceId,
-            btMac = bluetoothAddress,
-            sourceVersion = config.sourceVersion,
-            main = com.shilapi.xcertplay.airplay.CarPlayUiScale.apply(
-                AirPlayDisplayConfig(
-                    widthPixels = display.width,
-                    heightPixels = display.height,
-                    fps = display.fps,
+        get() {
+            val brand = branding.snapshot
+            return AirPlayConfig(
+                deviceName = config.deviceName,
+                deviceId = deviceId,
+                btMac = bluetoothAddress,
+                sourceVersion = config.sourceVersion,
+                main = com.shilapi.xcertplay.airplay.CarPlayUiScale.apply(
+                    AirPlayDisplayConfig(
+                        widthPixels = display.width,
+                        heightPixels = display.height,
+                        fps = display.fps,
+                    ),
+                    display.uiScale,
                 ),
-                display.uiScale,
-            ),
-            rightHandDrive = config.rightHandDrive,
-            port = config.airPlayPort,
-            entertainmentSampleRate = 48_000,
-            hevc = display.hevc,
-            microphone = true,
-            manufacturer = config.manufacturer,
-            model = config.model,
-            oemLabel = config.deviceName,
-        )
+                rightHandDrive = brand.settings.rightHandDrive,
+                port = config.airPlayPort,
+                entertainmentSampleRate = 48_000,
+                hevc = display.hevc,
+                microphone = true,
+                manufacturer = brand.settings.manufacturer,
+                model = config.model,
+                oemLabel = brand.settings.title,
+                icons = brand.icons,
+            )
+        }
 
     private val listener = object : AirPlaySessionListener {
         override fun onSessionActive(session: AirPlaySession) {
@@ -125,6 +130,7 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
     fun start() {
         hub.inputHandler = ::routeInput
         hub.onApplyDisplay = ::applyDisplay
+        hub.onApplyBranding = ::applyBranding
         hub.onMicrophoneData = { opus, payload -> bridge.sendMicrophonePayload(payload, opus) }
         startSupervisor()
         hub.onViewerJoined = { streamType ->
@@ -296,14 +302,32 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
      * Applies a new display configuration and restarts CarPlay so the phone re-negotiates the
      * display. Returns null on success or a human-readable error.
      */
+    @Synchronized
     fun applyDisplay(width: Int, height: Int, fps: Int, uiScale: Int, hevc: Boolean): String? {
         DisplayState.validate(width, height, fps)?.let { return it }
         display.update(width, height, fps, uiScale, hevc)
-        configStore?.save(PersistentConfig.of(config, display))
+        configStore?.save(PersistentConfig.of(config, display, branding.settings))
         log.info(
             "display changed to {}x{} @{}fps uiScale={} codec={} ({}); restarting CarPlay",
             width, height, fps, display.uiScale, if (display.hevc) "h265" else "h264", display.orientation,
         )
+        activeSession?.close()
+        restartWireless()
+        return null
+    }
+
+    /** Saves the vehicle layout, identity and OEM button, then reconnects to re-advertise them. */
+    @Synchronized
+    fun applyBranding(request: CarBranding): String? {
+        val prepared = try {
+            CarBrandingState.prepare(request)
+        } catch (error: IllegalArgumentException) {
+            return error.message ?: "Invalid car settings"
+        }
+        val saved = configStore?.save(PersistentConfig.of(config, display, prepared.settings))
+        if (saved?.isFailure == true) return "Could not save car settings. Check the state directory is writable."
+        branding.update(prepared)
+        log.info("car settings changed (driver side={}); restarting CarPlay", if (prepared.settings.rightHandDrive) "right" else "left")
         activeSession?.close()
         restartWireless()
         return null

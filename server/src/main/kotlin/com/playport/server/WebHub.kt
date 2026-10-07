@@ -23,6 +23,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -88,9 +89,11 @@ private class WsClient(
 class WebHub(
     private val config: ServerConfig,
     private val display: DisplayState,
+    private val branding: CarBrandingState = CarBrandingState(config),
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val brandingJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val clients = ConcurrentHashMap.newKeySet<WsClient>()
     private val codecsByStream = ConcurrentHashMap<Int, VideoCodec>()
     private val configByStream = ConcurrentHashMap<Int, Pair<VideoCodec, ByteArray>>()
@@ -103,6 +106,9 @@ class WebHub(
 
     /** Applies a display change; returns null on success or an error message. */
     @Volatile var onApplyDisplay: ((Int, Int, Int, Int, Boolean) -> String?)? = null
+
+    /** Saves vehicle layout, identity and return-to-car branding, reconnecting CarPlay on success. */
+    @Volatile var onApplyBranding: ((CarBranding) -> String?)? = null
 
     /** Browser microphone payloads: (isOpus, payload). */
     @Volatile var onMicrophoneData: ((Boolean, ByteArray) -> Unit)? = null
@@ -218,6 +224,60 @@ class WebHub(
             }
             get("/api/display") {
                 call.respondText(displayJson(), io.ktor.http.ContentType.Application.Json)
+            }
+            get("/api/car") {
+                if (call.request.queryParameters["token"] != config.accessToken) {
+                    call.respondText(
+                        """{"error":"invalid token"}""",
+                        io.ktor.http.ContentType.Application.Json,
+                        io.ktor.http.HttpStatusCode.Forbidden,
+                    )
+                    return@get
+                }
+                call.respondText(brandingJson.encodeToString(CarBranding.serializer(), branding.settings), io.ktor.http.ContentType.Application.Json)
+            }
+            post("/api/car") {
+                if (call.request.queryParameters["token"] != config.accessToken) {
+                    call.respondText(
+                        """{"error":"invalid token"}""",
+                        io.ktor.http.ContentType.Application.Json,
+                        io.ktor.http.HttpStatusCode.Forbidden,
+                    )
+                    return@post
+                }
+                val request = try {
+                    val body = call.receiveText()
+                    require(body.length <= 1_500_000)
+                    val fields = brandingJson.parseToJsonElement(body).jsonObject
+                    val settings = brandingJson.decodeFromJsonElement(CarBranding.serializer(), fields)
+                    // Older viewers omit driver side; preserve the current layout for those requests.
+                    if ("rightHandDrive" in fields) settings else settings.copy(rightHandDrive = branding.settings.rightHandDrive)
+                } catch (_: Exception) {
+                    call.respondText(
+                        """{"error":"malformed or oversized request"}""",
+                        io.ktor.http.ContentType.Application.Json,
+                        io.ktor.http.HttpStatusCode.BadRequest,
+                    )
+                    return@post
+                }
+                val applier = onApplyBranding
+                if (applier == null) {
+                    call.respondText(
+                        """{"error":"car settings unavailable"}""",
+                        io.ktor.http.ContentType.Application.Json,
+                        io.ktor.http.HttpStatusCode.ServiceUnavailable,
+                    )
+                    return@post
+                }
+                val error = applier(request)
+                if (error != null) {
+                    val body = kotlinx.serialization.json.buildJsonObject {
+                        put("error", kotlinx.serialization.json.JsonPrimitive(error))
+                    }.toString()
+                    call.respondText(body, io.ktor.http.ContentType.Application.Json, io.ktor.http.HttpStatusCode.BadRequest)
+                    return@post
+                }
+                call.respondText("""{"ok":true}""", io.ktor.http.ContentType.Application.Json)
             }
             post("/api/display") {
                 if (call.request.queryParameters["token"] != config.accessToken) {

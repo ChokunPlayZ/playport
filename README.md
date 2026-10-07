@@ -96,7 +96,10 @@ the browser** (no server-side decoding or re-encoding), and the browser decodes 
 - **Quality tuning** — "Match this window" advertises your display's physical pixels for 1:1
   sharpness; a stats HUD shows resolution, fps, bitrate, drops, decode queue and latency.
 - **Audio mixer** — master plus per-stream volumes (media, navigation, Siri/calls).
-- **Persistent settings** — display settings are saved to `~/.playport/config.json`; audio levels
+- **Car branding** — customize the manufacturer and CarPlay's return-to-car button title and logo,
+  with an image preview, default car icon, and visibility control.
+- **Driver side** — choose left or right in Car settings to position CarPlay's sidebar for the driver.
+- **Persistent settings** — display and car settings are saved to `~/.playport/config.json`; audio levels
   are saved in your browser.
 - **No cloud, no account** — everything runs on your machine and your LAN.
 
@@ -258,14 +261,28 @@ sidebar while keeping the CarPlay controls within reach.
 Every option can be given as a CLI flag; UI changes are saved to `~/.playport/config.json`
 (hand-editable — CLI flags always win). Run with `--help` for the full list.
 
+Open **Car** in the viewer to choose the **Driver side** (Left or Right), set the car manufacturer,
+and customize the **return-to-car button** on the CarPlay home screen. Driver side refers to the
+driver's seat and positions CarPlay's sidebar accordingly; it defaults to Left. Enable **Show button**, choose its title, and upload a PNG, JPG or WebP
+logo (up to 5 MB and 4096×4096 pixels). The viewer fits the image into a transparent 256×256 PNG;
+**Use default car icon** removes the custom logo. **Apply** saves these settings for all viewers
+and reconnects CarPlay so the iPhone receives the new layout, identity and icon. Driver side is
+saved as `rightHandDrive` in `~/.playport/config.json`. The button is hidden by
+default. The button title is independent of `--device-name`; the manufacturer is also used for
+Bluetooth identification. CLI logo files must be square PNGs, 32–1024 pixels and up to 1 MB.
+
 | Flag | Description | Default |
 |---|---|---|
 | `--device-name <name>` | Name shown on the iPhone | `PlayPort` |
 | `--model`, `--manufacturer` | Strings advertised to the phone | `playport` |
+| `--oem-label <title>` | Return-to-car button title; enables the button | device name |
+| `--oem-logo <path>` | Square PNG logo; enables the button | default car icon |
+| `--oem-icon`, `--no-oem-icon` | Show or hide the return-to-car button | hidden |
 | `--airplay-port <n>` | AirPlay RTSP port | `7000` |
 | `--http-port <n>` | Browser UI port (HTTPS) | `8080` |
 | `--width`, `--height`, `--fps`, `--ui-scale`, `--hevc` | Display defaults | `1280×720@60`, 100%, H.264 |
-| `--rhd` | Right-hand-drive layout | off |
+| `--driver-side <left\|right>` | Driver's seat and CarPlay sidebar side | `left` |
+| `--rhd`, `--lhd` | Shortcuts for right/left driver side; override the saved setting | — |
 | `--bind <address>` | Bind address | auto-detect LAN |
 | `--identity-dir <path>` | Directory containing `offline-mfi/` | `./identity` |
 | `--state-dir <path>` | Identity, pairings, TLS, config | `~/.playport` |

@@ -75,7 +75,7 @@ class WirelessBootstrap(private val server: CarPlayServer) : Closeable {
             val identification = Iap2IdentificationConfig(
                 name = server.config.deviceName,
                 modelIdentifier = server.config.model,
-                manufacturer = server.config.manufacturer,
+                manufacturer = server.branding.settings.manufacturer,
                 serialNumber = "CARPLAYWEB-" + server.deviceId.replace(":", ""),
                 firmwareVersion = "1.0.0",
                 hardwareVersion = "1.0",

@@ -1,4 +1,5 @@
 import { AudioEngine } from './audio';
+import { setupCarSettings } from './car';
 import { InputController } from './input';
 import { MicrophoneUplink } from './mic';
 import type { ServerMessage, WireMessage } from './protocol';
@@ -92,6 +93,7 @@ const microphone = new MicrophoneUplink(
 const audio = new AudioEngine((message) => showError(message));
 
 const token = resolveToken();
+setupCarSettings(token);
 const connection = new Connection(token, {
   onWire: (message: WireMessage) => {
     switch (message.kind) {

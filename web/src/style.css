@@ -111,7 +111,17 @@ dialog::backdrop { background: #0008; }
 .dimension-fields label { width: 100%; font-size: 12px; }
 .dimension-fields label > span { float: right; font-size: 11px; color: var(--muted); }
 .dimension-times { color: var(--muted); font-size: 13px; padding-bottom: 12px; }
-input[type="number"], select { width: 100%; min-height: 42px; margin-top: 8px; padding: 8px 10px; border: 1px solid #454545; border-radius: 6px; background: #151515; color: var(--text); font-size: 12px; }
+input[type="number"], input[type="text"], input[type="file"], select { width: 100%; min-height: 42px; margin-top: 8px; padding: 8px 10px; border: 1px solid #454545; border-radius: 6px; background: #151515; color: var(--text); font-size: 12px; }
+input[type="file"]::file-selector-button { border: 0; border-radius: 3px; padding: 4px 8px; margin-right: 8px; background: #333; color: var(--text); cursor: pointer; }
+.checkbox-field { display: flex; gap: 10px; align-items: center; font-size: 12px; line-height: 1.6; }
+.checkbox-field input { accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+.car-preview { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 8px; padding: 24px 16px; border: 1px solid var(--edge); border-radius: 8px; background: #080808; }
+.car-preview-icon { width: 80px; height: 80px; display: grid; place-items: center; }
+.car-preview-icon .icon { width: 80px; height: 80px; border-radius: 18px; padding: 15px; background: var(--panel); color: var(--accent); }
+.car-preview-icon img { width: 80px; height: 80px; object-fit: contain; }
+#car-preview-title { max-width: 100%; overflow-wrap: anywhere; font-size: 12px; }
+#car-preview-hidden { margin: 0; }
+.car-preview[data-visible="false"] .car-preview-icon, .car-preview[data-visible="false"] #car-preview-title { opacity: .4; }
 input[type="number"] { font-family: var(--mono); }
 .text-button { color: var(--text); font-size: 12px; padding: 10px 0; min-height: 40px; text-decoration: underline; text-underline-offset: 3px; }
 .text-button:hover { color: var(--accent); }
@@ -125,7 +135,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .restart-note { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0 0 12px; }
 .primary-button { min-height: 40px; padding: 0 18px; border-radius: 6px; background: var(--accent); color: #18200f; font-size: 13px; font-weight: 600; }
 .primary-button:not(:disabled):hover { background: #e2ffa8; }
-#display-status[data-error="true"] { color: #f3b98e; }
+#display-status[data-error="true"], #car-status[data-error="true"] { color: #f3b98e; }
 .master-slider { display: flex; align-items: center; gap: 12px; color: var(--muted); }
 .master-slider input { flex: 1; min-width: 0; }
 .audio-stream-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; margin: 20px 0; }

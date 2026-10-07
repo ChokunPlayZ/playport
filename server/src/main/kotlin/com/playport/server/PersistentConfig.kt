@@ -22,6 +22,10 @@ data class PersistentConfig(
     val deviceName: String = "PlayPort",
     val model: String = "playport",
     val manufacturer: String = "playport",
+    val oemLabel: String? = null,
+    val oemLogo: String? = null,
+    val oemIconVisible: Boolean = false,
+    val rightHandDrive: Boolean = false,
     val airPlayPort: Int = 7000,
     val httpPort: Int = 8080,
     val display: DisplayPrefs = DisplayPrefs(),
@@ -38,6 +42,10 @@ data class PersistentConfig(
         deviceName = deviceName,
         model = model,
         manufacturer = manufacturer,
+        oemLabel = oemLabel,
+        oemLogo = oemLogo,
+        oemIconVisible = oemIconVisible,
+        rightHandDrive = rightHandDrive,
         airPlayPort = airPlayPort,
         httpPort = httpPort,
         displayWidth = display.width,
@@ -61,10 +69,14 @@ data class PersistentConfig(
     )
 
     companion object {
-        fun of(config: ServerConfig, display: DisplayState): PersistentConfig = PersistentConfig(
+        fun of(config: ServerConfig, display: DisplayState, branding: CarBranding): PersistentConfig = PersistentConfig(
             deviceName = config.deviceName,
             model = config.model,
-            manufacturer = config.manufacturer,
+            manufacturer = branding.manufacturer,
+            oemLabel = branding.title,
+            oemLogo = branding.logo,
+            oemIconVisible = branding.showBackButton,
+            rightHandDrive = branding.rightHandDrive,
             airPlayPort = config.airPlayPort,
             httpPort = config.httpPort,
             display = DisplayPrefs(
@@ -101,14 +113,12 @@ class ConfigStore(private val stateDir: Path) {
         }.getOrNull()
     }
 
-    fun save(config: PersistentConfig) {
-        runCatching {
-            Files.createDirectories(stateDir)
-            val temporary = stateDir.resolve("$FILE_NAME.tmp")
-            Files.writeString(temporary, json.encodeToString(PersistentConfig.serializer(), config))
-            restrictToOwner(temporary)
-            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING)
-        }
+    fun save(config: PersistentConfig): Result<Unit> = runCatching {
+        Files.createDirectories(stateDir)
+        val temporary = stateDir.resolve("$FILE_NAME.tmp")
+        Files.writeString(temporary, json.encodeToString(PersistentConfig.serializer(), config))
+        restrictToOwner(temporary)
+        Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING)
     }
 
     private fun restrictToOwner(path: Path) {

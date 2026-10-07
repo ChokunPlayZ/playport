@@ -9,6 +9,9 @@ data class ServerConfig(
     val deviceName: String = "PlayPort",
     val model: String = "playport",
     val manufacturer: String = "playport",
+    val oemLabel: String? = null,
+    val oemLogo: String? = null,
+    val oemIconVisible: Boolean = false,
     val sourceVersion: String = "366.0",
     val airPlayPort: Int = 7000,
     val httpPort: Int = 8080,
@@ -66,6 +69,13 @@ data class ServerConfig(
                     "--device-name" -> config = config.copy(deviceName = nextValue(flag))
                     "--model" -> config = config.copy(model = nextValue(flag))
                     "--manufacturer" -> config = config.copy(manufacturer = nextValue(flag))
+                    "--oem-label" -> config = config.copy(oemLabel = nextValue(flag), oemIconVisible = true)
+                    "--oem-logo" -> config = config.copy(
+                        oemLogo = CarBrandingState.logoFromFile(Path.of(nextValue(flag))),
+                        oemIconVisible = true,
+                    )
+                    "--oem-icon" -> config = config.copy(oemIconVisible = true)
+                    "--no-oem-icon" -> config = config.copy(oemIconVisible = false)
                     "--airplay-port" -> config = config.copy(airPlayPort = nextValue(flag).toInt())
                     "--http-port" -> config = config.copy(httpPort = nextValue(flag).toInt())
                     "--width" -> config = config.copy(displayWidth = nextValue(flag).toInt())
@@ -73,7 +83,15 @@ data class ServerConfig(
                     "--fps" -> config = config.copy(displayFps = nextValue(flag).toInt())
                     "--ui-scale" -> config = config.copy(uiScale = com.shilapi.xcertplay.airplay.CarPlayUiScale.sanitize(nextValue(flag).toInt()))
                     "--hevc" -> config = config.copy(hevc = true)
+                    "--driver-side" -> config = config.copy(
+                        rightHandDrive = when (nextValue(flag).lowercase()) {
+                            "left" -> false
+                            "right" -> true
+                            else -> throw IllegalArgumentException("--driver-side must be left or right")
+                        },
+                    )
                     "--rhd" -> config = config.copy(rightHandDrive = true)
+                    "--lhd" -> config = config.copy(rightHandDrive = false)
                     "--bind" -> config = config.copy(bindAddress = nextValue(flag))
                     "--identity-dir" -> config = config.copy(identityDir = Path.of(nextValue(flag)))
                     "--state-dir" -> config = config.copy(stateDir = Path.of(nextValue(flag)))
@@ -118,6 +136,10 @@ data class ServerConfig(
                   --device-name <name>      AirPlay device name shown on the iPhone (default: playport)
                   --model <model>           AirPlay model string (default: playport)
                   --manufacturer <name>     Manufacturer string (default: playport)
+                  --oem-label <title>       Return-to-car button title; enables the button (default: device name)
+                  --oem-logo <path>         Square PNG logo, 32–1024 px, up to 1 MB; enables the button
+                  --oem-icon                Show the return-to-car button with the default car icon
+                  --no-oem-icon             Hide the return-to-car button
                   --airplay-port <port>     AirPlay RTSP port (default: 7000)
                   --http-port <port>        Web UI / WebSocket port (default: 8080)
                   --width <px>              Display width negotiated with the phone (default: 1280)
@@ -125,7 +147,8 @@ data class ServerConfig(
                   --fps <n>                 Display refresh rate (default: 60)
                   --ui-scale <75|85|100|115>  CarPlay control size: larger canvas, smaller controls (default: 100)
                   --hevc                    Offer H.265/HEVC video (sharper at the same bitrate; browser must support it)
-                  --rhd                     Right-hand-drive layout
+                  --driver-side <side>      Driver's seat: left | right (default: left)
+                  --rhd, --lhd              Shortcuts for right/left driver side
                   --bind <address>          Bind address (default: auto-detect LAN address)
                   --identity-dir <path>     Directory containing offline-mfi/ (default: ./identity)
                   --state-dir <path>        AirPlay identity + pairing state (default: ~/.playport)
