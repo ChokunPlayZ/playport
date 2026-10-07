@@ -38,6 +38,8 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
 
     val identity = AirPlayIdentityStore.loadOrCreate(config.stateDir)
     val deviceId: String = AirPlayIdentityStore.deviceId(identity)
+    // Wireless /info must identify the same Bluetooth accessory used for the iAP2 bootstrap.
+    @Volatile internal var bluetoothAddress: String = deviceId
     val bindAddress: InetAddress = Networks.resolve(config.bindAddress)
 
     val display = DisplayState(
@@ -65,7 +67,7 @@ class CarPlayServer(val config: ServerConfig, private val configStore: ConfigSto
         get() = AirPlayConfig(
             deviceName = config.deviceName,
             deviceId = deviceId,
-            btMac = deviceId,
+            btMac = bluetoothAddress,
             sourceVersion = config.sourceVersion,
             main = com.shilapi.xcertplay.airplay.CarPlayUiScale.apply(
                 AirPlayDisplayConfig(
